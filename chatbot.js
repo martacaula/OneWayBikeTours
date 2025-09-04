@@ -3,6 +3,7 @@ import 'dotenv/config'; // loads .env automatically
 import OpenAI from "openai";
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import crypto from 'node:crypto';
 
 const client = new OpenAI({
   baseURL: "https://models.github.ai/inference",
@@ -13,6 +14,7 @@ const client = new OpenAI({
 // RAG: Context loading & retrieval
 // -----------------------------
 const CONTEXT_PATH = path.join(process.cwd(), 'context', 'context.md');
+const CACHE_PATH = path.join(process.cwd(), 'context', 'context.md.cache.json');
 const EMBEDDING_MODEL = 'openai/text-embedding-3-small';
 const TOP_K = 5;
 
@@ -57,10 +59,45 @@ function chunkTextByParagraphs(text, maxChars = 800) {
   return chunks;
 }
 
+function sha256(text) {
+  return crypto.createHash('sha256').update(text, 'utf8').digest('hex');
+}
+
+async function loadCache() {
+  try {
+    const raw = await fs.readFile(CACHE_PATH, 'utf-8');
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+async function saveCache(payload) {
+  try {
+    await fs.writeFile(CACHE_PATH, JSON.stringify(payload, null, 2), 'utf-8');
+  } catch (e) {
+    console.warn('[RAG] Failed to write cache:', e?.message || e);
+  }
+}
+
 async function ensureContextEmbeddings() {
   if (chunkEmbeddings.length && contextChunks.length) return; // already prepared
   try {
     const raw = await fs.readFile(CONTEXT_PATH, 'utf-8');
+    const fileHash = sha256(raw);
+
+    // Try load cache
+    const cache = await loadCache();
+    if (cache && cache.fileHash === fileHash && cache.embeddingModel === EMBEDDING_MODEL) {
+      contextChunks = cache.chunks || [];
+      chunkEmbeddings = (cache.embeddings || []).map(normalize);
+      if (contextChunks.length && chunkEmbeddings.length === contextChunks.length) {
+        console.log(`[RAG] Cache hit: ${CACHE_PATH}`);
+        return;
+      }
+    }
+
+    // Recompute and cache
     contextChunks = chunkTextByParagraphs(raw);
     if (contextChunks.length === 0) return;
     const embResp = await client.embeddings.create({
@@ -68,11 +105,27 @@ async function ensureContextEmbeddings() {
       input: contextChunks,
     });
     chunkEmbeddings = embResp.data.map(d => normalize(d.embedding));
+    await saveCache({
+      version: 1,
+      embeddingModel: EMBEDDING_MODEL,
+      fileHash,
+      chunks: contextChunks,
+      embeddings: embResp.data.map(d => d.embedding),
+    });
   } catch (e) {
     console.warn('RAG initialization warning:', e?.message || e);
     contextChunks = [];
     chunkEmbeddings = [];
   }
+}
+
+const STOPWORDS = new Set([
+  'the','and','for','are','but','with','that','this','from','into','over','your','you','our','can','will','have','has','was','were','not','all','any','about','how','what','when','where','why','which','who','whom','is','to','in','on','of','it','as','at','by','be','or','an','a'
+]);
+
+function keywordSet(text) {
+  const tokens = (text.toLowerCase().match(/[\p{L}\p{N}]+/gu) || []).filter(t => t.length > 2 && !STOPWORDS.has(t));
+  return new Set(tokens);
 }
 
 async function retrieveContext(query, k = TOP_K) {
@@ -83,7 +136,22 @@ async function retrieveContext(query, k = TOP_K) {
       input: query,
     });
     const qVec = normalize(qEmbResp.data[0].embedding);
-    const scored = chunkEmbeddings.map((vec, idx) => ({ idx, score: cosineSim(vec, qVec) }));
+
+    // Keyword prefiltering
+    const kws = keywordSet(query);
+    let candidateIdx = [];
+    if (kws.size) {
+      const kwArr = Array.from(kws);
+      for (let i = 0; i < contextChunks.length; i++) {
+        const lc = contextChunks[i].toLowerCase();
+        if (kwArr.some(w => lc.includes(w))) candidateIdx.push(i);
+      }
+    }
+    if (candidateIdx.length === 0) {
+      candidateIdx = contextChunks.map((_, i) => i); // fallback to all
+    }
+
+    const scored = candidateIdx.map(idx => ({ idx, score: cosineSim(chunkEmbeddings[idx], qVec) }));
     scored.sort((a, b) => b.score - a.score);
     const top = scored.slice(0, Math.min(k, scored.length));
     return top.map(({ idx, score }) => ({ score, text: contextChunks[idx] }));
