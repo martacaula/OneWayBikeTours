@@ -107,7 +107,7 @@ function buildRagSystemMessage(topSnippets) {
 
 async function main() {
   const messages = [
-    { role: "system", content: "You are the CEO of a company, responsible for answering clients' questions about the products or services your company provides.  If you are unsure of an answer, request clarification or additional information as needed. Ensure all responses are brief, clear, concise , and aligned with any specific instructions provided. If you are unable to resolve the issue after your response, ask clients if they would prefer to discuss the matter further via a direct phone call." }
+    { role: "system", content: "You are the CEO of a company, responsible for answering clients' questions about the products or services your company provides." }
   ];
 
   // Prepare RAG context (non-blocking message shown once)
