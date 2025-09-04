@@ -1,0 +1,10 @@
+{
+  "dependencies": {
+    "dotenv": "^17.2.2",
+    "openai": "^5.19.1"
+  },
+  "type": "module",
+  "scripts": {
+    "start": "node chatbot.js"
+  }
+}
