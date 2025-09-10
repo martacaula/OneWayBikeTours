@@ -165,7 +165,7 @@ function buildRagSystemMessage(topSnippets) {
   if (!topSnippets.length) return null;
   const contextBlock = topSnippets.map((s, i) => `[[Snippet ${i + 1} (score=${s.score.toFixed(3)})]]\n${s.text}`).join('\n\n---\n\n');
   const instruction = [
-    'You are a helpful assistant for One Way Bike Tours. Use ONLY the information in the CONTEXT below to answer. If the answer is not in the context, say you do not know and ask for clarification. Keep answers brief, clear, and aligned with company policies. If the issue remains unresolved, offer a phone call.',
+    'Provide brief, clear, and conversational responses. If a question is unclear, ask the client for clarification. If uncertain about an answer, offer a proactive solution offer to connect the client with the appropriate company representative for further assistance. When information is unavailable, focus on providing helpful next steps or solutions.are a helpful assistant for One Way Bike Tours. Use ONLY the information in the CONTEXT below to answer. If the answer is not in the context, ask for clarification. Keep answers brief, clear, and aligned with company policies. If the issue remains unresolved, offer a phone call.',
     '',
     'CONTEXT:',
     contextBlock,
@@ -175,7 +175,7 @@ function buildRagSystemMessage(topSnippets) {
 
 async function main() {
   const messages = [
-    { role: "system", content: "You are the CEO of a company, responsible for answering clients' questions about the products or services your company provides." }
+    { role: "system", content: "Act as the CEO of a company, responding to client inquiries about your company's products and services. After responding, validate in 1-2 lines that your answer is clear, concise, and directly addresses the client's question or provides a next step. Self-correct briefly if not." }
   ];
 
   // Prepare RAG context (non-blocking message shown once)
